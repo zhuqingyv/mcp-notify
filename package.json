@@ -1,0 +1,10 @@
+{
+  "name": "mcp-notify",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server for macOS notifications with terminal-notifier",
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
