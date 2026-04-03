@@ -2,7 +2,7 @@
 
 MCP server for macOS native notifications with AI brand icons.
 
-Send desktop notifications from Claude Code with one-line tool calls — complete with 67 AI/Agent brand icons and system sound support.
+Send desktop notifications from any MCP-compatible AI agent with one-line tool calls — complete with 67 AI/Agent brand icons and system sound support.
 
 ---
 
@@ -10,7 +10,7 @@ Send desktop notifications from Claude Code with one-line tool calls — complet
 
 Just tell your AI agent:
 
-> Install mcp-notify from https://github.com/zhuqingyv/mcp-notify and set it up for Claude Code.
+> Install mcp-notify from https://github.com/zhuqingyv/mcp-notify and set it up as an MCP server.
 
 The agent will clone the repo, install dependencies, register the MCP server, and configure permissions automatically.
 
@@ -53,15 +53,30 @@ npm install
 
 ---
 
-## Setup with Claude Code
+## Setup
 
-### Register the MCP server
+### Universal MCP config (Cursor, Windsurf, Cline, and others)
+
+Add to your MCP client's config file:
+
+```json
+{
+  "mcpServers": {
+    "notify": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-notify/index.js"]
+    }
+  }
+}
+```
+
+### Claude Code
 
 ```bash
 claude mcp add notify -s user -- node /absolute/path/to/mcp-notify/index.js
 ```
 
-### Pre-authorize tools (skip confirmation prompts)
+#### Pre-authorize tools (Claude Code only — skip confirmation prompts)
 
 Add to `~/.claude/settings.json` under `permissions.allow`:
 
@@ -70,6 +85,8 @@ Add to `~/.claude/settings.json` under `permissions.allow`:
 "mcp__notify__list_sounds",
 "mcp__notify__list_icons"
 ```
+
+> Other MCP clients manage tool permissions through their own UI or config — this step is Claude Code-specific.
 
 ---
 
