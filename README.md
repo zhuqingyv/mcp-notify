@@ -6,6 +6,16 @@ Send desktop notifications from Claude Code with one-line tool calls — complet
 
 ---
 
+## Quick Start
+
+Just tell your AI agent:
+
+> Install mcp-notify from https://github.com/zhuqingyv/mcp-notify and set it up for Claude Code.
+
+The agent will clone the repo, install dependencies, register the MCP server, and configure permissions automatically.
+
+---
+
 ## Features
 
 - **`send_notification`** — Send macOS native notifications via terminal-notifier, with title, subtitle, sound, and icon
