@@ -10,6 +10,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ICONS_DIR = join(__dirname, "icons");
 
 // macOS: dynamic terminal-notifier path
+const TERMINAL_BUNDLE_IDS = {
+  "WarpTerminal":  "dev.warp.Warp-Stable",
+  "iTerm.app":     "com.googlecode.iterm2",
+  "Apple_Terminal":"com.apple.Terminal",
+  "vscode":        "com.microsoft.VSCode",
+  "cursor":        "com.todesktop.230313mzl4w4u92",
+  "alacritty":     "org.alacritty",
+  "kitty":         "net.kovidgoyal.kitty",
+  "Hyper":         "co.zeit.hyper",
+  "tmux":          "com.apple.Terminal",
+};
+
 let TERMINAL_NOTIFIER;
 try {
   TERMINAL_NOTIFIER = execSync("which terminal-notifier", { encoding: "utf8" }).trim();
@@ -28,6 +40,8 @@ function sendMacOS({ title, message, subtitle, sound, iconPath }) {
   if (title) args.push("-title", title);
   if (subtitle) args.push("-subtitle", subtitle);
   if (iconPath) args.push("-contentImage", iconPath);
+  const bundleId = TERMINAL_BUNDLE_IDS[process.env.TERM_PROGRAM];
+  if (bundleId) args.push("-activate", bundleId);
 
   const result = spawnSync(TERMINAL_NOTIFIER, args, { encoding: "utf8" });
   if (result.error || result.status !== 0) {
