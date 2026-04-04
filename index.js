@@ -1,15 +1,18 @@
+#!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { spawnSync, execSync } from "child_process";
+import { spawnSync, spawn } from "child_process";
 import { readdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { join, dirname } from "path";
+import net from "net";
+import crypto from "crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ICONS_DIR = join(__dirname, "icons");
 
-// macOS: dynamic terminal-notifier path
+// macOS: terminal bundle IDs for --activate (focus terminal on notification click)
 const TERMINAL_BUNDLE_IDS = {
   "WarpTerminal":  "dev.warp.Warp-Stable",
   "iTerm.app":     "com.googlecode.iterm2",
@@ -22,32 +25,72 @@ const TERMINAL_BUNDLE_IDS = {
   "tmux":          "com.apple.Terminal",
 };
 
-let TERMINAL_NOTIFIER;
-try {
-  TERMINAL_NOTIFIER = execSync("which terminal-notifier", { encoding: "utf8" }).trim();
-} catch {
-  TERMINAL_NOTIFIER = "/opt/homebrew/bin/terminal-notifier";
-}
+// Custom notification app bundle path
+const MCP_NOTIFY_APP = `${process.env.HOME}/Applications/MCPNotify.app`;
 
 // --- Platform-specific send functions ---
 
-function sendMacOS({ title, message, subtitle, sound, iconPath }) {
-  const args = [
-    "-message", message,
-    "-sound", sound ?? "Hero",
-    "-group", "mcp-notify",
-  ];
-  if (title) args.push("-title", title);
-  if (subtitle) args.push("-subtitle", subtitle);
-  if (iconPath) args.push("-contentImage", iconPath);
-  const bundleId = TERMINAL_BUNDLE_IDS[process.env.TERM_PROGRAM];
-  if (bundleId) args.push("-activate", bundleId);
+const SOCKET_PATH = "/tmp/mcp-notify.sock";
 
-  const result = spawnSync(TERMINAL_NOTIFIER, args, { encoding: "utf8" });
-  if (result.error || result.status !== 0) {
-    const err = result.error?.message ?? result.stderr ?? "unknown error";
-    return { error: `terminal-notifier failed: ${err}` };
+// Connect to daemon socket, send JSON message, return response
+function sendToSocket(payload) {
+  return new Promise((resolve) => {
+    const client = net.createConnection(SOCKET_PATH);
+    let response = "";
+
+    client.on("connect", () => {
+      client.write(JSON.stringify(payload) + "\n");
+    });
+    client.on("data", (d) => { response += d.toString(); });
+    client.on("end", () => {
+      try {
+        resolve({ data: JSON.parse(response.trim()) });
+      } catch {
+        resolve({ data: { ok: true } });
+      }
+    });
+    client.on("error", (err) => resolve({ error: err.message }));
+  });
+}
+
+// Launch daemon and wait until socket is ready (max ~3s)
+async function ensureDaemon() {
+  // Quick check: try connecting first
+  const first = await sendToSocket({ action: "ping" });
+  if (!first.error) return true;
+
+  // Not running — launch it
+  spawn("open", ["-n", "-a", MCP_NOTIFY_APP], { detached: true, stdio: "ignore" });
+
+  // Retry every 200ms, up to 15 attempts (~3s)
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    const result = await sendToSocket({ action: "ping" });
+    if (!result.error) return true;
   }
+  return false;
+}
+
+async function sendMacOS({ title, message, subtitle, sound, iconPath }) {
+  const ready = await ensureDaemon();
+  if (!ready) {
+    return { error: "mcp-notify daemon failed to start" };
+  }
+
+  const bundleId = TERMINAL_BUNDLE_IDS[process.env.TERM_PROGRAM];
+  const payload = {
+    action:   "send",
+    id:       crypto.randomUUID(),
+    message,
+    sound:    sound ?? "Glass",
+    ...(title    && { title }),
+    ...(subtitle && { subtitle }),
+    ...(iconPath && { icon: iconPath }),
+    ...(bundleId && { activate: bundleId }),
+  };
+
+  const result = await sendToSocket(payload);
+  if (result.error) return { error: `mcp-notify: ${result.error}` };
   return {};
 }
 
@@ -91,7 +134,7 @@ function sendWindows({ title, message }) {
   return {};
 }
 
-function sendNotify({ title, message, subtitle, sound, iconPath }) {
+async function sendNotify({ title, message, subtitle, sound, iconPath }) {
   const platform = process.platform;
   if (platform === "darwin") {
     return sendMacOS({ title, message, subtitle, sound, iconPath });
@@ -138,23 +181,35 @@ function listSounds() {
 // --- MCP Server ---
 
 const server = new McpServer({
-  name: "notify",
+  name: "mcp-ding",
   version: "1.0.0",
 });
 
 server.tool(
   "send_notification",
-  "Send a native desktop notification (macOS, Linux, Windows)",
+  `Send a desktop "ding" to the user — a native OS notification with optional icon and sound.
+
+USE PROACTIVELY when:
+- A long-running task (build, deploy, test suite) completes — the user may have switched windows
+- An error or blocker needs user attention and you cannot proceed without input
+- The user explicitly asks to be notified
+
+DO NOT use for:
+- Routine status updates the user is already watching
+- Every single tool call or minor step — only meaningful milestones
+
+ICON SELECTION: Pick an icon that matches the context. If discussing OpenAI code, use "openai"; for Claude-related work, use "claude"; for a generic alert, omit the icon. Call list_icons once per session if you need the full list.
+
+SOUND: Keep the default unless the user asks for a specific sound. Call list_sounds only if the user wants to pick one.`,
   {
-    title: z.string().optional().describe("Notification title"),
-    message: z.string().describe("Notification body (required)"),
-    subtitle: z.string().optional().describe("Subtitle (macOS only)"),
-    sound: z.string().optional().default("Hero").describe("Sound name, default Hero. Use list_sounds to see available values (macOS only)"),
-    icon: z.string().optional().default("claude").describe("Icon name without .png extension, default claude. Use list_icons to see available values. Works on macOS and Linux."),
+    title: z.string().optional().describe("Short notification title, e.g. 'Build Complete' or 'Error'"),
+    message: z.string().describe("Notification body — be concise, the user will read this in a small popup"),
+    subtitle: z.string().optional().describe("Secondary line below the title (macOS only)"),
+    sound: z.string().optional().default("Glass").describe("macOS sound name. Default: Glass. Only change if user requests it"),
+    icon: z.string().optional().describe("AI brand icon name (without .png). Match to context: 'claude', 'openai', 'deepseek', etc. Omit for generic alerts"),
   },
   async ({ title, message, subtitle, sound, icon }) => {
-    const iconName = icon ?? "claude";
-    const iconPath = join(ICONS_DIR, iconName + ".png");
+    const iconPath = icon ? join(ICONS_DIR, icon + ".png") : undefined;
 
     const result = sendNotify({ title, message, subtitle, sound, iconPath });
 
@@ -173,7 +228,7 @@ server.tool(
 
 server.tool(
   "list_sounds",
-  "List available notification sounds for the current platform",
+  "List available system sounds for notifications. Only call this when the user wants to pick or preview a specific sound — do NOT call before every notification.",
   {},
   async () => {
     const sounds = listSounds();
@@ -185,7 +240,7 @@ server.tool(
 
 server.tool(
   "list_icons",
-  "List all available AI brand icon names (usable as the icon parameter in send_notification)",
+  "List all available AI brand icon names. Call once per session if needed — do NOT call before every notification. Available icons: claude, openai, gemini, deepseek, kimi, qwen, doubao, coze, copilot, cursor, grok, perplexity, zhipu, ernie-bot, xunfei-spark.",
   {},
   async () => {
     let icons;
@@ -195,7 +250,9 @@ server.tool(
         .map((f) => f.replace(".png", ""))
         .sort();
     } catch {
-      icons = ["claude", "openai", "gemini", "grok", "deepseek", "kimi", "qwen"];
+      icons = ["claude", "openai", "gemini", "deepseek", "kimi", "qwen", "doubao",
+               "coze", "copilot", "cursor", "grok", "perplexity", "zhipu",
+               "ernie-bot", "xunfei-spark"];
     }
     return {
       content: [{ type: "text", text: icons.join("\n") }],

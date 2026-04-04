@@ -1,9 +1,26 @@
 {
-  "name": "mcp-notify",
+  "name": "mcp-ding",
   "version": "1.0.0",
   "type": "module",
-  "description": "MCP server for macOS notifications with terminal-notifier",
+  "description": "MCP notification server — desktop alerts with AI brand icons, click-to-terminal",
   "main": "index.js",
+  "bin": {
+    "mcp-ding": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "icons/",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "notification",
+    "desktop",
+    "macos",
+    "linux",
+    "windows"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.22.0"

@@ -1,90 +1,88 @@
 #!/usr/bin/env python3
-"""Generate 128x128 PNG icons for AI vendors using pure Python (no deps)."""
+"""
+Generate 128x128 PNG icons for AI platforms.
+Downloads real logos from official sources; falls back to pixel text if download fails.
+Uses sips (macOS built-in) or PIL for image processing.
+"""
 
 import struct
 import zlib
 import os
+import sys
+import subprocess
+import tempfile
+import urllib.request
+import urllib.error
+import ssl
 
-ICONS_DIR = "/tmp/mcp-notify/icons"
+ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 os.makedirs(ICONS_DIR, exist_ok=True)
-
-# (filename_without_ext, bg_hex, label)
-ICONS = [
-    # 海外厂商
-    ("claude",           "#D97757", "C"),
-    ("openai",           "#10A37F", "AI"),
-    ("gemini",           "#8AB4F8", "G"),
-    ("google-ai-studio", "#4285F4", "GS"),
-    ("meta-ai",          "#0082FB", "M"),
-    ("copilot",          "#0078D4", "Co"),
-    ("azure-openai",     "#0089D6", "Az"),
-    ("grok",             "#000000", "X"),
-    ("mistral",          "#FF7000", "Mi"),
-    ("cohere",           "#39594D", "Co"),
-    ("perplexity",       "#20808D", "Px"),
-    ("stability-ai",     "#F5A623", "St"),
-    ("midjourney",       "#000000", "MJ"),
-    ("cursor",           "#000000", "Cu"),
-    ("replit",           "#F26207", "Re"),
-    ("github-copilot",   "#24292F", "GH"),
-    ("amazon-bedrock",   "#FF9900", "AB"),
-    ("amazon-q",         "#FF9900", "Q"),
-    ("apple-intelligence","#000000","Ap"),
-    ("hugging-face",     "#FFD21E", "HF"),
-    ("runway",           "#000000", "Rw"),
-    ("elevenlabs",       "#000000", "11"),
-    ("suno",             "#FFC107", "Su"),
-    ("pi-ai",            "#5B5EA6", "Pi"),
-    ("character-ai",     "#09B37B", "CA"),
-    ("pika",             "#6C63FF", "Pk"),
-    ("kling",            "#FF4B4B", "Kl"),
-    ("groq",             "#F55036", "Gq"),
-    ("together-ai",      "#0A0A0A", "To"),
-    ("replicate",        "#000000", "Rp"),
-    ("ai21",             "#5C6BC0", "21"),
-    ("aleph-alpha",      "#FF5F00", "AA"),
-    ("nvidia",           "#76B900", "Nv"),
-    ("luma-ai",          "#000000", "La"),
-    ("adobe-firefly",    "#FF0000", "Af"),
-    ("notion-ai",        "#000000", "No"),
-    ("grammarly",        "#15C39A", "Gr"),
-    # 国内厂商
-    ("ernie-bot",        "#3388FF", "文"),
-    ("qwen",             "#6E6EFF", "Q"),
-    ("doubao",           "#1D7DFA", "豆"),
-    ("coze",             "#1D7DFA", "Cz"),
-    ("zhipu",            "#3B82F6", "智"),
-    ("kimi",             "#000000", "K"),
-    ("deepseek",         "#4D6BFE", "DS"),
-    ("yi-ai",            "#FF6B35", "Yi"),
-    ("minimax",          "#FF5C5C", "Mx"),
-    ("baichuan",         "#0066FF", "百"),
-    ("tiangong",         "#00C4CC", "天"),
-    ("sensenova",        "#FF4040", "商"),
-    ("xunfei-spark",     "#0052D9", "讯"),
-    ("hunyuan",          "#07C160", "混"),
-    ("step-ai",          "#5B5EA6", "St"),
-    ("tencent-yuanbao",  "#07C160", "元"),
-    ("youdao-ai",        "#CC0000", "有"),
-    ("360-ai",           "#00AA00", "360"),
-    ("pangu",            "#CF0A2C", "盘"),
-    ("xiaomi-ai",        "#FF6900", "小"),
-    ("sogou-ai",         "#FF6600", "搜"),
-    ("zidong-taichi",    "#7B2FBE", "紫"),
-    ("mobvoi",           "#FF5722", "出"),
-    ("characterglm",     "#4A90D9", "角"),
-    ("xverse",           "#1A73E8", "元"),
-    # AI 开发工具
-    ("langchain",        "#1C3C3C", "LC"),
-    ("llamaindex",       "#7C3AED", "LI"),
-    ("wandb",            "#FFBE00", "W&"),
-    ("vercel-ai",        "#000000", "Ve"),
-    ("supabase-ai",      "#3ECF8E", "Sb"),
-]
 
 SIZE = 128
 RADIUS = 24
 
+# (filename, bg_hex, label, logo_urls)
+# logo_urls: list of URLs to try in order; first success wins
+ICONS = [
+    ("claude",       "#D97757", "C",  [
+        "https://claude.ai/favicon.ico",
+        "https://www.anthropic.com/favicon.ico",
+    ]),
+    ("openai",       "#10A37F", "AI", [
+        "https://openai.com/favicon.ico",
+    ]),
+    ("gemini",       "#8AB4F8", "G",  [
+        "https://www.google.com/favicon.ico",
+    ]),
+    ("deepseek",     "#4D6BFE", "DS", [
+        "https://www.deepseek.com/favicon.ico",
+    ]),
+    ("kimi",         "#000000", "K",  [
+        "https://kimi.moonshot.cn/favicon.ico",
+    ]),
+    ("qwen",         "#6E6EFF", "Q",  [
+        "https://tongyi.aliyun.com/favicon.ico",
+    ]),
+    ("doubao",       "#1D7DFA", "豆", [
+        "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/bytedance.svg",
+        "https://www.doubao.com/favicon.png",
+    ]),
+    ("coze",         "#1D7DFA", "Cz", [
+        "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/coze.svg",
+        "https://www.coze.cn/favicon.ico",
+        "https://www.coze.com/favicon.ico",
+    ]),
+    ("copilot",      "#0078D4", "Co", [
+        "https://copilot.microsoft.com/favicon.ico",
+        "https://www.microsoft.com/favicon.ico",
+    ]),
+    ("cursor",       "#000000", "Cu", [
+        "https://www.cursor.com/favicon.ico",
+        "https://cursor.sh/favicon.ico",
+    ]),
+    ("grok",         "#000000", "X",  [
+        "https://grok.com/favicon.ico",
+        "https://x.com/favicon.ico",
+    ]),
+    ("perplexity",   "#20808D", "Px", [
+        "https://www.perplexity.ai/favicon.ico",
+    ]),
+    ("zhipu",        "#3B82F6", "智", [
+        "https://open.bigmodel.cn/favicon.ico",
+        "https://www.zhipuai.cn/favicon.ico",
+    ]),
+    ("ernie-bot",    "#3388FF", "文", [
+        "https://cdn.simpleicons.org/baidu",
+        "https://qianfan.cloud.baidu.com/favicon.ico",
+    ]),
+    ("xunfei-spark", "#0052D9", "讯", [
+        "https://xinghuo.xfyun.cn/favicon.ico",
+        "https://www.xfyun.cn/favicon.ico",
+    ]),
+]
+
+
+# ── Fallback: pure-Python pixel icon ─────────────────────────────────────────
 
 def hex_to_rgb(h):
     h = h.lstrip("#")
@@ -92,7 +90,6 @@ def hex_to_rgb(h):
 
 
 def write_png(path, pixels):
-    """Write a SIZE x SIZE RGBA pixel array as PNG."""
     def chunk(name, data):
         c = struct.pack(">I", len(data)) + name + data
         return c + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
@@ -116,13 +113,11 @@ def write_png(path, pixels):
 
 
 def rounded_rect_mask(size, radius):
-    """Return SIZE x SIZE boolean mask for rounded rect."""
     mask = [[False] * size for _ in range(size)]
     r = radius
     for y in range(size):
         for x in range(size):
             in_rect = True
-            # corners
             if x < r and y < r:
                 in_rect = (x - r) ** 2 + (y - r) ** 2 <= r * r
             elif x > size - 1 - r and y < r:
@@ -135,9 +130,7 @@ def rounded_rect_mask(size, radius):
     return mask
 
 
-def draw_text_pixels(pixels, text, bg_rgb):
-    """Draw centered white text using a simple 5x7 bitmap font."""
-    # Minimal ASCII bitmap font (5 wide x 7 tall) for Latin chars
+def draw_text_pixels(pixels, text):
     FONT = {
         'A': [0x0E,0x11,0x11,0x1F,0x11,0x11,0x11],
         'B': [0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E],
@@ -180,22 +173,19 @@ def draw_text_pixels(pixels, text, bg_rgb):
         ' ': [0x00,0x00,0x00,0x00,0x00,0x00,0x00],
     }
 
-    # For CJK / unknown chars, draw a simple filled square
     def get_glyph(ch):
         if ch in FONT:
             return FONT[ch]
-        # filled block for CJK
         return [0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F]
 
     CHAR_W = 5
     CHAR_H = 7
-    SCALE = 5  # each pixel = 5x5 block -> chars are 25x35 px
-    GAP = SCALE  # gap between chars
+    SCALE = 5
+    GAP = SCALE
 
     chars = list(text.upper())
     total_w = len(chars) * CHAR_W * SCALE + (len(chars) - 1) * GAP
     total_h = CHAR_H * SCALE
-
     start_x = (SIZE - total_w) // 2
     start_y = (SIZE - total_h) // 2
 
@@ -214,26 +204,216 @@ def draw_text_pixels(pixels, text, bg_rgb):
                                 pixels[py][px] = (255, 255, 255, 255)
 
 
-def make_icon(name, bg_hex, label):
+def make_fallback_icon(name, bg_hex, label):
     bg = hex_to_rgb(bg_hex)
     mask = rounded_rect_mask(SIZE, RADIUS)
-
     pixels = [[(0, 0, 0, 0)] * SIZE for _ in range(SIZE)]
     for y in range(SIZE):
         for x in range(SIZE):
             if mask[y][x]:
                 pixels[y][x] = (bg[0], bg[1], bg[2], 255)
-
-    draw_text_pixels(pixels, label, bg)
-
+    draw_text_pixels(pixels, label)
     path = os.path.join(ICONS_DIR, name + ".png")
     write_png(path, pixels)
     return path
 
 
+# ── Download + resize via sips ────────────────────────────────────────────────
+
+def extract_largest_from_ico(ico_path):
+    """
+    Extract the largest image from an ICO file.
+    Returns path to a temp PNG/BMP file, or None on failure.
+    ICO format: 6-byte header + N * 16-byte directory entries + image data.
+    """
+    try:
+        with open(ico_path, "rb") as f:
+            data = f.read()
+        # ICO header: reserved(2) type(2) count(2)
+        if len(data) < 6:
+            return None
+        reserved, ico_type, count = struct.unpack_from("<HHH", data, 0)
+        if ico_type != 1:
+            return None
+        best_size = -1
+        best_offset = 0
+        best_length = 0
+        for i in range(count):
+            off = 6 + i * 16
+            if off + 16 > len(data):
+                break
+            width = data[off]      # 0 means 256
+            height = data[off + 1]
+            w = width if width != 0 else 256
+            h = height if height != 0 else 256
+            img_size = struct.unpack_from("<I", data, off + 8)[0]
+            img_offset = struct.unpack_from("<I", data, off + 12)[0]
+            if w * h > best_size:
+                best_size = w * h
+                best_offset = img_offset
+                best_length = img_size
+        if best_length == 0 or best_offset + best_length > len(data):
+            return None
+        img_data = data[best_offset: best_offset + best_length]
+        # Check if it's embedded PNG (starts with PNG magic)
+        suffix = ".png" if img_data[:4] == b"\x89PNG" else ".bmp"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp.write(img_data)
+        tmp.close()
+        return tmp.name
+    except Exception:
+        return None
+
+
+def resize_to_128_sips(src_path, dst_path):
+    """Use macOS sips to resize image to 128x128 PNG."""
+    result = subprocess.run(
+        ["sips", "-z", "128", "128", "--setProperty", "format", "png",
+         src_path, "--out", dst_path],
+        capture_output=True, text=True
+    )
+    return result.returncode == 0 and os.path.exists(dst_path) and os.path.getsize(dst_path) > 0
+
+
+def resize_to_128_pil(src_path, dst_path):
+    """Use Pillow to resize image to 128x128 PNG."""
+    from PIL import Image
+    with Image.open(src_path) as img:
+        img = img.convert("RGBA")
+        img = img.resize((128, 128), Image.LANCZOS)
+        img.save(dst_path, "PNG")
+    return True
+
+
+def render_svg_with_qlmanage(svg_path, dst_path):
+    """
+    Use macOS qlmanage to render SVG to PNG (128x128).
+    qlmanage writes to <outdir>/<filename>.png, so we redirect to a temp dir.
+    """
+    out_dir = tempfile.mkdtemp()
+    try:
+        result = subprocess.run(
+            ["qlmanage", "-t", "-s", "128", "-o", out_dir, svg_path],
+            capture_output=True, text=True, timeout=10
+        )
+        rendered = os.path.join(out_dir, os.path.basename(svg_path) + ".png")
+        if os.path.exists(rendered) and os.path.getsize(rendered) > 0:
+            import shutil
+            shutil.move(rendered, dst_path)
+            return True
+    except Exception:
+        pass
+    finally:
+        try:
+            import shutil
+            shutil.rmtree(out_dir, ignore_errors=True)
+        except Exception:
+            pass
+    return False
+
+
+def try_resize(src_path, dst_path):
+    # SVG: use qlmanage
+    if src_path.endswith(".svg"):
+        return render_svg_with_qlmanage(src_path, dst_path)
+
+    # Try PIL first
+    try:
+        return resize_to_128_pil(src_path, dst_path)
+    except Exception:
+        pass
+
+    # Try sips directly
+    if resize_to_128_sips(src_path, dst_path):
+        return True
+
+    # If ICO, extract largest image first then retry sips
+    if src_path.endswith(".ico"):
+        extracted = extract_largest_from_ico(src_path)
+        if extracted:
+            ok = resize_to_128_sips(extracted, dst_path)
+            os.unlink(extracted)
+            if ok:
+                return True
+
+    return False
+
+
+def download_logo(name, urls):
+    """Try each URL; return local temp path on first success, or None."""
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/120.0.0.0 Safari/537.36"
+    }
+    # macOS Python may lack system CA bundle; use unverified context for favicon downloads
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers=req_headers)
+            with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
+                if resp.status != 200:
+                    continue
+                data = resp.read()
+                if len(data) < 100:
+                    continue
+                ct = resp.headers.get("content-type", "")
+                # Determine file type by content-type or magic bytes or URL
+                if "svg" in ct or data[:5] in (b"<svg ", b"<?xml") or url.endswith(".svg"):
+                    suffix = ".svg"
+                elif data[:4] == b"\x89PNG":
+                    suffix = ".png"
+                elif data[:2] == b"\xff\xd8":
+                    suffix = ".jpg"
+                elif data[:4] in (b"GIF8", b"GIF9"):
+                    suffix = ".gif"
+                elif data[:4] == b"\x00\x00\x01\x00":
+                    suffix = ".ico"
+                elif url.endswith(".ico"):
+                    suffix = ".ico"
+                else:
+                    # Unknown binary format — skip
+                    print(f"  [skip] {url}: unknown format ct={ct} magic={data[:4].hex()}", file=sys.stderr)
+                    continue
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                tmp.write(data)
+                tmp.close()
+                return tmp.name
+        except Exception as e:
+            print(f"  [skip] {url}: {e}", file=sys.stderr)
+    return None
+
+
+def make_icon(name, bg_hex, label, urls):
+    out_path = os.path.join(ICONS_DIR, name + ".png")
+
+    tmp_src = download_logo(name, urls)
+    if tmp_src:
+        ok = try_resize(tmp_src, out_path)
+        os.unlink(tmp_src)
+        if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            return out_path, "downloaded"
+
+    # Fallback
+    make_fallback_icon(name, bg_hex, label)
+    return out_path, "fallback"
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     total = len(ICONS)
-    for i, (name, color, label) in enumerate(ICONS):
-        path = make_icon(name, color, label)
-        print(f"[{i+1}/{total}] {path}")
-    print(f"\nDone. Generated {total} icons in {ICONS_DIR}/")
+    results = {"downloaded": [], "fallback": []}
+
+    for i, (name, color, label, urls) in enumerate(ICONS):
+        path, method = make_icon(name, color, label, urls)
+        results[method].append(name)
+        status = "OK" if method == "downloaded" else "FALLBACK"
+        print(f"[{i+1}/{total}] [{status}] {path}")
+
+    print(f"\nDone. {total} icons in {ICONS_DIR}/")
+    print(f"  downloaded: {len(results['downloaded'])} — {', '.join(results['downloaded'])}")
+    print(f"  fallback:   {len(results['fallback'])} — {', '.join(results['fallback'])}")

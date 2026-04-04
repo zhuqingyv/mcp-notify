@@ -1,4 +1,4 @@
-# mcp-notify
+# mcp-ding
 
 MCP server for macOS native notifications with AI brand icons.
 
@@ -8,9 +8,15 @@ Send desktop notifications from any MCP-compatible AI agent with one-line tool c
 
 ## Quick Start
 
-Just tell your AI agent:
+```bash
+npx -y mcp-ding
+```
 
-> Install mcp-notify from https://github.com/zhuqingyv/mcp-notify and set it up as an MCP server.
+Or just tell your AI agent:
+
+```
+Install mcp-ding from https://github.com/zhuqingyv/mcp-notify and set it up as an MCP server.
+```
 
 The agent will clone the repo, install dependencies, register the MCP server, and configure permissions automatically.
 
@@ -45,6 +51,14 @@ brew install terminal-notifier
 
 ## Installation
 
+### Via npx (recommended)
+
+```bash
+npx -y mcp-ding
+```
+
+### Manual
+
 ```bash
 git clone https://github.com/zhuqingyv/mcp-notify.git
 cd mcp-notify
@@ -62,9 +76,9 @@ Add to your MCP client's config file:
 ```json
 {
   "mcpServers": {
-    "notify": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-notify/index.js"]
+    "mcp-ding": {
+      "command": "npx",
+      "args": ["-y", "mcp-ding"]
     }
   }
 }
@@ -73,7 +87,7 @@ Add to your MCP client's config file:
 ### Claude Code
 
 ```bash
-claude mcp add notify -s user -- node /absolute/path/to/mcp-notify/index.js
+claude mcp add mcp-ding -s user -- npx -y mcp-ding
 ```
 
 #### Pre-authorize tools (Claude Code only — skip confirmation prompts)
@@ -81,9 +95,9 @@ claude mcp add notify -s user -- node /absolute/path/to/mcp-notify/index.js
 Add to `~/.claude/settings.json` under `permissions.allow`:
 
 ```json
-"mcp__notify__send_notification",
-"mcp__notify__list_sounds",
-"mcp__notify__list_icons"
+"mcp__mcp-ding__send_notification",
+"mcp__mcp-ding__list_sounds",
+"mcp__mcp-ding__list_icons"
 ```
 
 > Other MCP clients manage tool permissions through their own UI or config — this step is Claude Code-specific.
