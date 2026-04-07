@@ -71,7 +71,7 @@ async function ensureDaemon() {
   return false;
 }
 
-async function sendMacOS({ title, message, subtitle, sound, iconPath }) {
+async function sendMacOS({ title, message, subtitle, sound, iconPath, duration, persistent }) {
   const ready = await ensureDaemon();
   if (!ready) {
     return { error: "mcp-notify daemon failed to start" };
@@ -83,10 +83,12 @@ async function sendMacOS({ title, message, subtitle, sound, iconPath }) {
     id:       crypto.randomUUID(),
     message,
     sound:    sound ?? "Glass",
-    ...(title    && { title }),
-    ...(subtitle && { subtitle }),
-    ...(iconPath && { icon: iconPath }),
-    ...(bundleId && { activate: bundleId }),
+    ...(title      && { title }),
+    ...(subtitle   && { subtitle }),
+    ...(iconPath   && { icon: iconPath }),
+    ...(bundleId   && { activate: bundleId }),
+    ...(duration != null && { duration }),
+    ...(persistent && { persistent: true }),
   };
 
   const result = await sendToSocket(payload);
@@ -134,10 +136,10 @@ function sendWindows({ title, message }) {
   return {};
 }
 
-async function sendNotify({ title, message, subtitle, sound, iconPath }) {
+async function sendNotify({ title, message, subtitle, sound, iconPath, duration, persistent }) {
   const platform = process.platform;
   if (platform === "darwin") {
-    return sendMacOS({ title, message, subtitle, sound, iconPath });
+    return sendMacOS({ title, message, subtitle, sound, iconPath, duration, persistent });
   } else if (platform === "linux") {
     return sendLinux({ title, message, iconPath });
   } else if (platform === "win32") {
@@ -207,11 +209,13 @@ SOUND: Keep the default unless the user asks for a specific sound. Call list_sou
     subtitle: z.string().optional().describe("Secondary line below the title (macOS only)"),
     sound: z.string().optional().default("Glass").describe("macOS sound name. Default: Glass. Only change if user requests it"),
     icon: z.string().optional().describe("AI brand icon name (without .png). Match to context: 'claude', 'openai', 'deepseek', etc. Omit for generic alerts"),
+    duration: z.number().optional().describe("Display duration in seconds. Default: 5. Set to 0 for persistent notification that stays until dismissed"),
+    persistent: z.boolean().optional().default(false).describe("If true, notification stays until user dismisses it (right-swipe or click). Use for important blockers that need user attention"),
   },
-  async ({ title, message, subtitle, sound, icon }) => {
+  async ({ title, message, subtitle, sound, icon, duration, persistent }) => {
     const iconPath = icon ? join(ICONS_DIR, icon + ".png") : undefined;
 
-    const result = sendNotify({ title, message, subtitle, sound, iconPath });
+    const result = await sendNotify({ title, message, subtitle, sound, iconPath, duration, persistent });
 
     if (result.error) {
       return {
